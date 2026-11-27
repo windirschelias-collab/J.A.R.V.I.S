@@ -124,10 +124,6 @@ async function send() {
     wait.textContent = "Fehler: " + e.message;
   }
 }
-setTimeout(() => {
-  const names = speechSynthesis.getVoices().filter(x => x.lang.startsWith("de")).map(x => x.name);
-  add("Deutsche Stimmen: " + (names.join(", ") || "keine gefunden"), "j");
-}, 1500);
 
 document.getElementById("send").onclick = send;
 inp.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
