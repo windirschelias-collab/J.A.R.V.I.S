@@ -74,6 +74,11 @@ function speak(t) {
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(t);
   u.lang = "de-DE";
+  const vs = speechSynthesis.getVoices();
+  const v = vs.find(x => /yannick/i.test(x.name) && /erweitert|enhanced|premium/i.test(x.name))
+         || vs.find(x => /yannick/i.test(x.name));
+  if (v) u.voice = v;
+  u.rate = 0.95;
   speechSynthesis.speak(u);
 }
 
