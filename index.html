@@ -6,20 +6,23 @@
 <title>JARVIS</title>
 <style>
   body{margin:0;height:100vh;display:flex;flex-direction:column;background:#0a0f1a;color:#e6f7ff;font-family:-apple-system,sans-serif}
-  h1{margin:0;padding:14px;text-align:center;color:#4fd8ff;font-size:1.2rem;border-bottom:1px solid #16314a}
+  #top{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #16314a}
+  h1{margin:0;color:#4fd8ff;font-size:1.2rem}
   #chat{flex:1;overflow-y:auto;padding:12px}
   .m{max-width:85%;margin:8px 0;padding:10px 14px;border-radius:14px;white-space:pre-wrap;line-height:1.4}
   .u{margin-left:auto;background:#1b4d6b}
   .j{background:#13243a}
   #bar{display:flex;gap:8px;padding:10px;border-top:1px solid #16314a}
-  #inp{flex:1;padding:12px;border-radius:10px;border:none;font-size:16px;background:#13243a;color:#fff}
-  button{padding:12px 16px;border:none;border-radius:10px;background:#4fd8ff;color:#0a0f1a;font-weight:bold;font-size:16px}
+  #inp{flex:1;min-width:0;padding:12px;border-radius:10px;border:none;font-size:16px;background:#13243a;color:#fff}
+  button{padding:12px 14px;border:none;border-radius:10px;background:#4fd8ff;color:#0a0f1a;font-weight:bold;font-size:16px}
+  #vol{padding:6px 10px;font-size:18px}
 </style>
 </head>
 <body>
-<h1>JARVIS</h1>
+<div id="top"><h1>JARVIS</h1><button id="vol">🔊</button></div>
 <div id="chat"></div>
 <div id="bar">
+  <button id="mic">🎤</button>
   <input id="inp" placeholder="Schreib JARVIS...">
   <button id="send">Senden</button>
 </div>
@@ -29,6 +32,7 @@ const SYSTEM = "Du bist JARVIS, der persönliche KI-Assistent deines Nutzers. Du
 const chat = document.getElementById("chat");
 const inp = document.getElementById("inp");
 let history = [];
+let voiceOn = true;
 
 let key = localStorage.getItem("jarvis_key");
 if (!key) {
@@ -45,14 +49,18 @@ function add(text, cls) {
   return d;
 }
 
-async function send() {
-  const text = inp.value.trim();
-  if (!text) return;
-  inp.value = "";
-  add(text, "u");
-  history.push({ role: "user", parts: [{ text }] });
-  const wait = add("...", "j");
-  try {
+function speak(t) {
+  if (!voiceOn || !window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(t);
+  u.lang = "de-DE";
+  speechSynthesis.speak(u);
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function ask(wait) {
+  for (let i = 0; i < 4; i++) {
     const r = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent?key=" + localStorage.getItem("jarvis_key"),
       {
@@ -65,17 +73,51 @@ async function send() {
       }
     );
     const data = await r.json();
-    if (data.error) throw new Error(data.error.message);
-    const answer = data.candidates[0].content.parts[0].text;
+    if (!data.error) return data.candidates[0].content.parts[0].text;
+    const busy = r.status === 503 || r.status === 429 || /high demand|overloaded|unavailable/i.test(data.error.message);
+    if (!busy || i === 3) throw new Error(data.error.message);
+    wait.textContent = "Google ist ausgelastet, ich versuche es erneut (" + (i + 1) + "/3)...";
+    await sleep(3000 * (i + 1));
+  }
+}
+
+async function send() {
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = "";
+  if (voiceOn && window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+  add(text, "u");
+  history.push({ role: "user", parts: [{ text }] });
+  const wait = add("...", "j");
+  try {
+    const answer = await ask(wait);
     wait.textContent = answer;
     history.push({ role: "model", parts: [{ text: answer }] });
+    speak(answer);
   } catch (e) {
+    history.pop();
     wait.textContent = "Fehler: " + e.message;
   }
 }
 
 document.getElementById("send").onclick = send;
 inp.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+
+document.getElementById("vol").onclick = e => {
+  voiceOn = !voiceOn;
+  e.target.textContent = voiceOn ? "🔊" : "🔇";
+  if (!voiceOn && window.speechSynthesis) speechSynthesis.cancel();
+};
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+document.getElementById("mic").onclick = () => {
+  if (!SR) { add("Spracheingabe wird in diesem Browser nicht unterstützt.", "j"); return; }
+  const rec = new SR();
+  rec.lang = "de-DE";
+  rec.onresult = e => { inp.value = e.results[0][0].transcript; send(); };
+  rec.onerror = e => add("Mikrofon-Fehler: " + e.error, "j");
+  rec.start();
+};
 </script>
 </body>
 </html>
