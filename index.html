@@ -48,11 +48,31 @@
 </div>
 <script>
 const MODEL = "gemini-3.5-flash-lite";
-const SYSTEM = "Du bist JARVIS, der persönliche KI-Assistent deines Nutzers. Du antwortest auf Deutsch, kurz, freundlich und mit einer Prise trockenem Humor.";
+const BASE = "Du bist JARVIS, der persönliche KI-Assistent deines Nutzers. Du antwortest auf Deutsch, kurz, freundlich und mit einer Prise trockenem Humor.";
 const chat = document.getElementById("chat");
 const inp = document.getElementById("inp");
-let history = [];
 let voiceOn = true;
+
+function load(name, fallback) {
+  try { return JSON.parse(localStorage.getItem(name)) || fallback; }
+  catch (e) { return fallback; }
+}
+let history = load("jarvis_hist", []);
+let facts = load("jarvis_facts", []);
+while (history.length && history[0].role !== "user") history.shift();
+
+function saveAll() {
+  history = history.slice(-40);
+  while (history.length && history[0].role !== "user") history.shift();
+  localStorage.setItem("jarvis_hist", JSON.stringify(history));
+  localStorage.setItem("jarvis_facts", JSON.stringify(facts));
+}
+
+function systemText() {
+  let s = BASE;
+  if (facts.length) s += " Das weißt du über deinen Nutzer: " + facts.join("; ") + ".";
+  return s;
+}
 
 let key = localStorage.getItem("jarvis_key");
 if (!key) {
@@ -69,15 +89,14 @@ function add(text, cls) {
   return d;
 }
 
+history.forEach(h => add(h.parts[0].text, h.role === "user" ? "u" : "j"));
+if (!history.length) add("Guten Tag. Ich bin JARVIS. Sag \"Merk dir: ...\", dann behalte ich es.", "j");
+
 function speak(t) {
   if (!voiceOn || !window.speechSynthesis) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(t);
   u.lang = "de-DE";
-  const vs = speechSynthesis.getVoices();
-  const v = vs.find(x => /yannick/i.test(x.name) && /erweitert|enhanced|premium/i.test(x.name))
-         || vs.find(x => /yannick/i.test(x.name));
-  if (v) u.voice = v;
   u.rate = 0.95;
   speechSynthesis.speak(u);
 }
@@ -92,7 +111,7 @@ async function ask(wait) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          systemInstruction: { parts: [{ text: SYSTEM }] },
+          systemInstruction: { parts: [{ text: systemText() }] },
           contents: history
         })
       }
@@ -106,18 +125,40 @@ async function ask(wait) {
   }
 }
 
+function localReply(text) {
+  let m = text.match(/^merk dir[:,]?\s+(.+)/i);
+  if (m) {
+    facts.push(m[1].trim());
+    saveAll();
+    return "Notiert: " + m[1].trim();
+  }
+  if (/^vergiss alles/i.test(text)) {
+    facts = []; history = [];
+    saveAll();
+    chat.innerHTML = "";
+    return "Alles vergessen. Ein Neuanfang.";
+  }
+  if (/was wei(ß|ss)t du (über|ueber) mich/i.test(text)) {
+    return facts.length ? "Das habe ich mir gemerkt:\n- " + facts.join("\n- ") : "Noch nichts. Sag \"Merk dir: ...\".";
+  }
+  return null;
+}
+
 async function send() {
   const text = inp.value.trim();
   if (!text) return;
   inp.value = "";
   if (voiceOn && window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance(""));
   add(text, "u");
+  const local = localReply(text);
+  if (local) { add(local, "j"); speak(local); return; }
   history.push({ role: "user", parts: [{ text }] });
   const wait = add("...", "j");
   try {
     const answer = await ask(wait);
     wait.textContent = answer;
     history.push({ role: "model", parts: [{ text: answer }] });
+    saveAll();
     speak(answer);
   } catch (e) {
     history.pop();
@@ -145,4 +186,3 @@ document.getElementById("mic").onclick = () => {
 };
 </script>
 </body>
-</html>
