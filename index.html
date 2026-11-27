@@ -77,7 +77,7 @@ async function ask(wait) {
     const busy = r.status === 503 || r.status === 429 || /high demand|overloaded|unavailable/i.test(data.error.message);
     if (!busy || i === 3) throw new Error(data.error.message);
     wait.textContent = "Google ist ausgelastet, ich versuche es erneut (" + (i + 1) + "/3)...";
-    await sleep(3000 * (i + 1));
+    await sleep(1000 * (i + 1));
   }
 }
 
